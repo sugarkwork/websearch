@@ -10,18 +10,32 @@ import dotenv
 dotenv.load_dotenv()
 
 
-api_models = [
-    'openai/gpt-4o-2024-08-06', 
-    "cohere/command-r-plus-08-2024", 
-    "anthropic/claude-3-5-sonnet-20241022"
-    "anthropic/claude-3-5-sonnet-20240620",
-    "gemini/gemini-1.5-pro-002", 
-    'openai/gpt-4o-mini-2024-07-18', 
-    'cohere/command-r-08-2024', 
-    "openai/local-llm",
+api_models = []
+
+if not os.path.exists("models.json"):
+    api_models = [
+        "cohere/command-r-plus-08-2024",
+        "openai/gpt-4o-2024-08-06",
+        "openai/gpt-4o-mini-2024-07-18",
+        "cohere/command-r-08-2024",
+        "anthropic/claude-3-5-sonnet-20241022",
+        "anthropic/claude-3-5-sonnet-20240620",
+        "gemini/gemini-1.5-pro-002",
+        "openai/local-lmstudio"
     ]
+    with open("models.json", "w") as f:
+        json.dump(api_models, f)
+
+with open("models.json", "r") as f:
+    api_models = json.load(f)
 
 api_current_model = 0
+
+
+def change_model(model_name: str) -> str:
+    global api_current_model
+    api_current_model = api_models.index(model_name)
+    return api_models[api_current_model]
 
 
 safety_settings=[
@@ -75,7 +89,7 @@ async def chat(system: str, message_user:str, use_cache=True, json_mode=False) -
                     response = await acompletion(
                         model=current_model,
                         api_key="sk-1234",
-                        api_base="http://192.168.1.14:1234/v1",
+                        api_base="http://localhost:1234/v1",
                         messages=messages,
                     )
                 elif "grok" in current_model:
