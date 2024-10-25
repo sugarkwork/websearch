@@ -5,6 +5,7 @@ import logging
 import markdown
 import json
 import traceback
+from datetime import datetime
 
 import trafilatura
 from duckduckgo_search import DDGS
@@ -307,10 +308,10 @@ class SearchInterface:
                 async for progress, status, result in search_and_analyze(keyword, 1):
                     yield progress, status, result
 
-            yield 0.4, "集計中...", ""
-            yield 0.4, f"検索記事数: {len(articles)}", ""
+            yield 0.8, "集計中...", ""
+            yield 0.8, f"検索記事数: {len(articles)}", ""
 
-            yield 0.5, "検索結果を整理中...", ""
+            yield 0.9, "検索結果を整理中...", ""
             result = await self.search_engine.answer(analyze_user.fulltext_question, articles)
 
             # 完了
@@ -393,9 +394,48 @@ def create_ui() -> gr.Interface:
                 )
                 search_button = gr.Button("検索開始")
                 result_output = gr.HTML()
+        
+            with gr.Row():
+                new_search_button = gr.Button("新規検索")
+                gr.HTML("<hr />")
+                history_list = gr.DataFrame(
+                    headers=["ID", "検索クエリ", "結果", "検索日時"],
+                    label="検索履歴"
+                )
+
+            def clear_inputs():
+                return "", "", 0, ""
+
+            async def select_history(evt: gr.SelectData):
+                history = load_memory_sync("search_history", [])
+                selected_row = history[evt.index[0]]
+                return {
+                    query_input: selected_row[0],
+                    result_output: "<hr />" + markdown.markdown(selected_row[1]) + "<hr />"
+                }
+
+            # イベントハンドラの設定
+            new_search_button.click(
+                fn=clear_inputs,
+                outputs=[query_input, result_output, progress_bar, progress_text]
+            )
+
+            history_list.select(
+                fn=select_history,
+                outputs=[query_input, result_output]
+            )
 
         search_interface = SearchInterface()
 
+        async def load_history():
+            history = await load_memory("search_history", [])
+            return history
+
+        async def save_history(query, result):
+            await save_memory("search_history", 
+                            [(query, result, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))] + 
+                            load_memory_sync("search_history", []))
+            
         async def search_handler(query: str, keywords_count: int, depth: int, threads: int, articles: int, article_quality: int, model: str) -> AsyncGenerator[list, None]:
             await save_memory("setting_current_model", model)
             await save_memory("setting_keywords_count", keywords_count)
@@ -406,20 +446,32 @@ def create_ui() -> gr.Interface:
 
             outputs = []
             status_log = []
+            final_result = ""
             async for progress, status, result in search_interface.process_search(
                 query, keywords_count, depth, threads, articles, article_quality, model):
                 status_log.append(status)
+                final_result = result
                 outputs = [
-                    progress * 100,  # progress_bar の値
+                    max(0, min(100, progress * 100)),  # progress_bar の値
                     '\n'.join(status_log),         # progress_text の値
                     "<hr />" + markdown.markdown(result) + "<hr />"  # result_output の値
                 ]
                 yield outputs
+            
+                        # 検索完了時に履歴を保存
+            if progress >= 1.0:
+                await save_history(query, final_result)
+                yield outputs + [await load_history()]
 
         search_button.click(
             fn=search_handler,
             inputs=[query_input, keywords_bar, depth_bar, threads_bar, articles_bar, article_quality_bar, model_dropdown],
             outputs=[progress_bar, progress_text, result_output]
+        )
+
+        interface.load(
+            fn=load_history,
+            outputs=history_list
         )
 
     return interface
