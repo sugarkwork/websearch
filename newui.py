@@ -4,6 +4,7 @@ from typing import Tuple, AsyncGenerator
 import logging
 import markdown
 import json
+import traceback
 
 import trafilatura
 from duckduckgo_search import DDGS
@@ -131,8 +132,8 @@ class SearchEngine:
         for article in articles:
             article_text += f"URL: {article.url}\n{article.excerpted_articles}\n\n"
         
-        print(f"Answering: {question}")
-        print(f"Articles: {article_text}")
+        logger.info(f"Answering: {question}")
+        logger.info(f"Articles: {article_text}")
 
         result = await chat(
             "", 
@@ -156,7 +157,6 @@ class SearchEngine:
             .replace('___keyword___', keyword)
             .replace('___URL___', article_url), 
             article_url, json_mode=True)
-        print(f"Analyzed: {type(result)}")
         result["question"] = question
         result["url"] = article_url
         result["article"] = article_text
@@ -165,7 +165,7 @@ class SearchEngine:
 
     @staticmethod
     async def page_to_text(url:str) -> str:
-        print(f"[trafilatura] Fetching: {url}")
+        logger.info(f"Fetching: {url}")
         text = await load_memory(url)
         if text is not None:
             return text
@@ -182,15 +182,14 @@ class SearchEngine:
 
     @staticmethod
     async def search(query:str, max_results:int=3) -> list[dict[str, str]]:
-        print(f"[ddg] Searching: {query}")
+        logger.info(f"Searching: {query}")
         key = f"search_{query}_{max_results}"
         query = query.strip()
         results = await load_memory(key)
         if results is not None:
+            logger.info(f"Search results found in memory: {query}")
             return results
-
-        print(f"[ddg] Searching: {query}")
-
+        
         def ddg_search():
             with DDGS() as ddgs:
                 return list(ddgs.text(
@@ -205,6 +204,7 @@ class SearchEngine:
         results = await loop.run_in_executor(None, ddg_search)
         
         await save_memory(key, results)
+        logger.info(f"Search results saved to memory: {query}")
         return results
 
 
@@ -256,12 +256,12 @@ class SearchInterface:
                 if len(articles) >= max_articles:
                     return
 
-                yield 0.2 + (len(articles) / max_articles), f"検索中: {keyword} (深さ: {depth})", ""
+                yield 0.2 + (len(articles) / max_articles / 2), f"検索中: {keyword} (深さ: {depth})", ""
 
                 async with search_semaphore:
                     results = await self.search_engine.search(keyword)
 
-                yield 0.2 + (len(articles) / max_articles), f"検索完了: {keyword} - {len(results)}件の結果", ""
+                yield 0.2 + (len(articles) / max_articles / 2), f"検索完了: {keyword} - {len(results)}件の結果", ""
 
                 for search_result in results:
                     url = search_result['href']
@@ -275,7 +275,7 @@ class SearchInterface:
                 if len(articles) >= max_articles:
                     return
 
-                yield 0.3 + (len(articles) / max_articles), f"記事を解析中: {url} (深さ: {depth})", ""
+                yield 0.3 + (len(articles) / max_articles / 2), f"記事を解析中: {url} (深さ: {depth})", ""
 
                 async with analyze_semaphore:
                     try:
@@ -283,16 +283,16 @@ class SearchInterface:
                         if analyzed_url is not None:
                             if analyzed_url.relevance_rating >= article_quality:
                                 articles.append(analyzed_url)
-                            yield 0.3 + (len(articles) / max_articles), f"記事の解析完了: {url}\nスコア ( {analyzed_url.relevance_rating} / 10 )", ""
+                            yield 0.3 + (len(articles) / max_articles / 2), f"記事の解析完了: {url}\nスコア ( {analyzed_url.relevance_rating} / 10 )", ""
                             if len(articles) >= max_articles:
                                 return
                         else:
                             logger.error(f"url none: {url}")
-                            yield 0.3 + (len(articles) / max_articles), f"記事の解析失敗: {url}", ""
+                            yield 0.3 + (len(articles) / max_articles / 2), f"記事の解析失敗: {url}", ""
                             return
                     except Exception as e:
                         logger.error(f"記事の解析でエラーが発生: {str(e)}")
-                        yield 0.3 + (len(articles) / max_articles), f"記事の解析エラー: {url} - {str(e)}", ""
+                        yield 0.3 + (len(articles) / max_articles / 2), f"記事の解析エラー: {url} - {str(e)}", ""
                         return
 
                 for keyword in analyzed_url.keywords:
@@ -319,9 +319,7 @@ class SearchInterface:
         except Exception as e:
             logger.error(f"検索処理でエラーが発生: {str(e)}")
             yield 0.0, f"エラーが発生しました: {str(e)}", ""
-            # print stacktrace
-            import traceback
-            traceback.print_exc()
+            logger.error(traceback.format_exc())
 
 def create_ui() -> gr.Interface:
     """Gradio UIの構築"""
@@ -329,16 +327,6 @@ def create_ui() -> gr.Interface:
         with gr.Row():
             # 左カラム（進捗情報）
             with gr.Column(scale=1):
-                progress_bar = gr.Slider(
-                    minimum=0,
-                    maximum=100,
-                    value=0,
-                    label="進捗",
-                    interactive=False,
-                )
-                # hr
-                hr = gr.HTML("<hr />")
-
                 models = json.load(open("models.json"))
                 # drop down list
                 model_dropdown = gr.Dropdown(
@@ -381,7 +369,15 @@ def create_ui() -> gr.Interface:
                     maximum=10,
                     value=load_memory_sync("setting_article_quality", 7),
                     step=1,
-                    label="参照する記事のクオリティ",
+                    label="参照する記事の関連度",
+                )
+                hr = gr.HTML("<hr />")
+                progress_bar = gr.Slider(
+                    minimum=0,
+                    maximum=100,
+                    value=0,
+                    label="進捗",
+                    interactive=False,
                 )
                 progress_text = gr.Textbox(
                     label="進捗状況",
