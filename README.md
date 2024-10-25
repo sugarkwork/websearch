@@ -26,9 +26,15 @@ perplexity っぽい実装を目指したテストコードです。
 
 使う AI の API キーだけでいいです。
 
+手動で起動する場合。
+
     python3.10 -m venv venv
     venv/scripts/activate
     pip install -r requirements.txt
     python newui.py
+
+Python が入っている環境で自動構築して使用する場合（Windows）
+
+    webui.bat
 
 ブラウザで [localhost:7860](http://localhost:7860/) を開きます。
