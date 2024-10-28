@@ -1,3 +1,4 @@
+import os
 import gradio as gr
 import asyncio
 from typing import Tuple, AsyncGenerator
@@ -9,6 +10,7 @@ from datetime import datetime
 
 import trafilatura
 from duckduckgo_search import DDGS
+from googleapiclient.discovery import build
 
 from aichat import chat, change_model
 from sqlite_memory_async import load_memory, save_memory
@@ -125,6 +127,9 @@ class ArticleAnalyzeResult:
 class SearchEngine:
     """検索エンジンのクラス"""
 
+    def __init__(self, engine: str) -> None:
+        self.engine = engine.strip().lower()
+
     async def answer(self, question: str, articles: list[ArticleAnalyzeResult]) -> str:
 
         average_score = sum([article.relevance_rating for article in articles]) / len(articles)
@@ -181,10 +186,9 @@ class SearchEngine:
         await save_memory(url, text)
         return text
 
-    @staticmethod
-    async def search(query:str, max_results:int=3) -> list[dict[str, str]]:
+    async def search(self, query:str, max_results:int=3) -> list[dict[str, str]]:
         logger.info(f"Searching: {query}")
-        key = f"search_{query}_{max_results}"
+        key = f"search_{query}_{max_results}_{self.engine}"
         query = query.strip()
         results = await load_memory(key)
         if results is not None:
@@ -201,8 +205,32 @@ class SearchEngine:
                     max_results=max_results
                 ))
         
+        def ggl_search():
+            service = build(
+                "customsearch", "v1", developerKey=os.getenv("GOOGLE_SEARCH_API_KEY")
+            )
+
+            res = (
+                service.cse().list(
+                    fields="items(title,snippet,link)",
+                    q=query,
+                    cx=os.getenv("GOOGLE_SEARCH_ENGUINE_ID"),
+                ).execute()
+            )
+
+            return res.get('items', [])
+        
         loop = asyncio.get_event_loop()
-        results = await loop.run_in_executor(None, ddg_search)
+
+        results = []
+        if self.engine == "duckduckgo":
+            results = await loop.run_in_executor(None, ddg_search)
+        elif self.engine == "google":
+            results = await loop.run_in_executor(None, ggl_search)
+        else:
+            logger.error(f"Unknown search engine: {self.engine}")
+        
+        results = results[:max_results]
         
         await save_memory(key, results)
         logger.info(f"Search results saved to memory: {query}")
@@ -222,13 +250,22 @@ class ProgressTracker:
 
 class SearchInterface:
     def __init__(self):
-        self.search_engine = SearchEngine()
+        self.search_engine = None
         self.progress_tracker = ProgressTracker()
 
     async def process_search(
-        self, query: str, keywords_count: int, max_depth: int, max_threads: int, max_articles: int, article_quality: int, model: str
+        self, query: str, 
+        keywords_count: int, 
+        max_depth: int, 
+        max_threads: int, 
+        max_articles: int, 
+        article_quality: int, 
+        model: str,
+        engine: str
     ) -> AsyncGenerator[Tuple[float, str, str], None]:
-    
+        
+        self.search_engine = SearchEngine(engine)
+
         try:
             yield 0.0, "検索を開始します...", ""
             await asyncio.sleep(0.1)
@@ -265,7 +302,7 @@ class SearchInterface:
                 yield 0.2 + (len(articles) / max_articles / 2), f"検索完了: {keyword} - {len(results)}件の結果", ""
 
                 for search_result in results:
-                    url = search_result['href']
+                    url = search_result.get('href', search_result.get('link', ""))
                     async for progress, status, result in analyze_and_follow(url, keyword, depth+1):
                         yield progress, status, result
 
@@ -334,6 +371,17 @@ def create_ui() -> gr.Interface:
                     label="使用モデル",
                     choices=models,
                     value=load_memory_sync("setting_current_model", models[0]),
+                    interactive=True
+                )
+
+                engines = ["DuckDuckGo", ]
+                if os.environ.get("GOOGLE_SEARCH_ENGUINE_ID") is not None:
+                    engines.append("Google")
+
+                engine_dropdown = gr.Dropdown(
+                    label="検索エンジン",
+                    choices=engines,
+                    value=load_memory_sync("setting_current_engine", engines[0]),
                     interactive=True
                 )
 
@@ -436,19 +484,29 @@ def create_ui() -> gr.Interface:
                             [(query, result, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))] + 
                             load_memory_sync("search_history", []))
             
-        async def search_handler(query: str, keywords_count: int, depth: int, threads: int, articles: int, article_quality: int, model: str) -> AsyncGenerator[list, None]:
+        async def search_handler(
+                query: str, 
+                keywords_count: int, 
+                depth: int, 
+                threads: int, 
+                articles: int, 
+                article_quality: int, 
+                model: str,
+                search_engine: str
+                ) -> AsyncGenerator[list, None]:
             await save_memory("setting_current_model", model)
             await save_memory("setting_keywords_count", keywords_count)
             await save_memory("setting_depth", depth)
             await save_memory("setting_threads", threads)
             await save_memory("setting_articles", articles)
             await save_memory("setting_article_quality", article_quality)
+            await save_memory("setting_current_engine", search_engine)
 
             outputs = []
             status_log = []
             final_result = ""
             async for progress, status, result in search_interface.process_search(
-                query, keywords_count, depth, threads, articles, article_quality, model):
+                query, keywords_count, depth, threads, articles, article_quality, model, search_engine):
                 status_log.append(status)
                 final_result = result
                 outputs = [
@@ -465,7 +523,7 @@ def create_ui() -> gr.Interface:
 
         search_button.click(
             fn=search_handler,
-            inputs=[query_input, keywords_bar, depth_bar, threads_bar, articles_bar, article_quality_bar, model_dropdown],
+            inputs=[query_input, keywords_bar, depth_bar, threads_bar, articles_bar, article_quality_bar, model_dropdown, engine_dropdown],
             outputs=[progress_bar, progress_text, result_output]
         )
 
