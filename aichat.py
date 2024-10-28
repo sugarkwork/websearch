@@ -19,6 +19,7 @@ if not os.path.exists("models.json"):
         "anthropic/claude-3-5-sonnet-20241022",
         "anthropic/claude-3-5-sonnet-20240620",
         "gemini/gemini-1.5-pro-002",
+        "gemini/gemini-1.5-flash-002",
         "cohere/command-r-plus-08-2024",
         "cohere/command-r-08-2024",
         "openai/local-lmstudio"
@@ -26,8 +27,9 @@ if not os.path.exists("models.json"):
     with open("models.json", "w") as f:
         json.dump(api_models, f)
 
-with open("models.json", "r") as f:
-    api_models = json.load(f)
+else:
+    with open("models.json", "r") as f:
+        api_models = json.load(f)
 
 api_current_model = 0
 
