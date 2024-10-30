@@ -22,7 +22,8 @@ if not os.path.exists("models.json"):
         "gemini/gemini-1.5-flash-002",
         "cohere/command-r-plus-08-2024",
         "cohere/command-r-08-2024",
-        "openai/local-lmstudio"
+        "openai/local-lmstudio",
+        "huggingface/Qwen/Qwen2.5-72B-Instruct"
     ]
     with open("models.json", "w") as f:
         json.dump(api_models, f)
