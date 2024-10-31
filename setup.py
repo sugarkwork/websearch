@@ -6,7 +6,7 @@ with codecs.open('requirements.txt', 'r', encoding='utf-16') as f:
 
 setuptools.setup(
     name="ai_web_search",
-    version="0.3",
+    version="0.3.1",
     install_requires=requirements,
     packages=setuptools.find_packages(),
     description="A search tool for AI-based web data",
