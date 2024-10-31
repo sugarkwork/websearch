@@ -390,7 +390,7 @@ async def search(
         yield outputs
 
 
-async def search_simple(query:str, model="openai/gpt-4o-2024-08-06", output_format="html") -> AsyncGenerator[dict, None]:
+async def search_simple(query:str, model="openai/gpt-4o-2024-08-06", output_format="html") -> str:
     async for data in search(
         query=query, 
         keywords_count=3, 
@@ -403,13 +403,13 @@ async def search_simple(query:str, model="openai/gpt-4o-2024-08-06", output_form
         output_format=output_format):
         pass
     
-    return data
+    return data[2]
 
 
 async def main(query:str):
     result = await search_simple(query=query, output_format="makrdown")
     print("-----------------")
-    print(result[2])
+    print(result)
 
 
 if __name__ == "__main__":
