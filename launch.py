@@ -53,4 +53,4 @@ def extract_arg(args, name):
 if __name__ == "__main__":
     prepare_environment()
 
-    run(f'"{python}" newui.py', "Starting Web UI", "Couldn't start Web UI", live=True)
+    run(f'"{python}" ai_web_search/newui.py', "Starting Web UI", "Couldn't start Web UI", live=True)
