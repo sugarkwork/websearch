@@ -3,7 +3,7 @@ import os
 import asyncio
 import litellm  
 from litellm import completion, acompletion
-from sqlite_memory_async import load_memory, save_memory
+from .sqlite_memory_async import load_memory, save_memory
 import json
 from json_repair import repair_json
 import dotenv

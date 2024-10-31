@@ -11,10 +11,10 @@ from datetime import datetime
 from duckduckgo_search import DDGS
 from googleapiclient.discovery import build
 
-from sqlite_memory_async import load_memory, save_memory
-from sqlite_memory import load_memory as load_memory_sync, save_memory as save_memory_sync
+from .sqlite_memory_async import load_memory, save_memory
+from .sqlite_memory import load_memory as load_memory_sync, save_memory as save_memory_sync
 
-import searcher
+from . import searcher
 
 
 # ログ設定

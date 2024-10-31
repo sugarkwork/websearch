@@ -12,8 +12,8 @@ import trafilatura
 from duckduckgo_search import DDGS
 from googleapiclient.discovery import build
 
-from aichat import chat, change_model
-from sqlite_memory_async import load_memory, save_memory
+from .aichat import chat, change_model
+from .sqlite_memory_async import load_memory, save_memory
 
 
 # ログ設定
