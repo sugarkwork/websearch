@@ -1,6 +1,7 @@
+import codecs
 import setuptools
 
-with open('requirements.txt', 'r', encoding='utf-8') as f:
+with codecs.open('requirements.txt', 'r', encoding='utf-16') as f:
     requirements = f.read().splitlines()
 
 setuptools.setup(
