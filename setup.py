@@ -1,6 +1,6 @@
 import setuptools
 
-with open('requirements.txt') as f:
+with open('requirements.txt', 'r', encoding='utf-8') as f:
     requirements = f.read().splitlines()
 
 setuptools.setup(
