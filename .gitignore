@@ -169,3 +169,8 @@ cython_debug/
 *.lnk
 /test
 /venv2
+chat_log.db
+chatlog.db
+newui.db
+search_cache.db
+/venv3
