@@ -12,9 +12,8 @@ import trafilatura
 from duckduckgo_search import DDGS
 from googleapiclient.discovery import build
 
-from .aichat import chat, change_model
-from .sqlite_memory_async import load_memory, save_memory
-
+from chat_assistant import ChatAssistant
+from pmem.async_pmem import PersistentMemory
 
 # ログ設定
 logging.basicConfig(level=logging.INFO)
@@ -128,6 +127,8 @@ class SearchEngine:
 
     def __init__(self, engine: str) -> None:
         self.engine = engine.strip().lower()
+        self.assistant = ChatAssistant()
+        self.memory = PersistentMemory("search_cache.db")
 
     async def answer(self, question: str, articles: list[ArticleAnalyzeResult]) -> str:
 
@@ -140,7 +141,7 @@ class SearchEngine:
         logger.info(f"Answering: {question}")
         logger.info(f"Articles: {article_text}")
 
-        result = await chat(
+        result = await self.assistant.chat(
             "", 
             prompt_generate_answer.replace('___question___', question).replace('___articles___', article_text), 
             json_mode=False)
@@ -148,14 +149,14 @@ class SearchEngine:
         return result
 
     async def analyze_keyword(self, query: str, keywords_count:int=3) -> QueryAnalyzeResult:
-        result = await chat(prompt_analyze_keyword.replace('___search_word_count___', str(keywords_count)), query, json_mode=True)
+        result = await self.assistant.chat(prompt_analyze_keyword.replace('___search_word_count___', str(keywords_count)), query, json_mode=True)
         return QueryAnalyzeResult(result, query)
     
     async def analyze(self, question: str, article_url: str, keyword:str, keywords_count:int=3) -> ArticleAnalyzeResult:
         article_text = await self.page_to_text(article_url)
         if article_text is None:
             return None
-        result = await chat(prompt_page_analyze
+        result = await self.assistant.chat(prompt_page_analyze
             .replace('___question___', question)
             .replace('___search_word_count___', str(keywords_count))
             .replace('___article___', article_text)
@@ -168,28 +169,46 @@ class SearchEngine:
         result["keyword"] = keyword
         return ArticleAnalyzeResult(result)
 
-    @staticmethod
-    async def page_to_text(url:str) -> str:
+    async def page_to_text(self, url:str) -> str:
         logger.info(f"Fetching: {url}")
-        text = await load_memory(url)
+        text = await self.memory.load(url)
         if text is not None:
             return text
         
         loop = asyncio.get_event_loop()
-        downloaded = await loop.run_in_executor(None, trafilatura.fetch_url, url)
-        text = await loop.run_in_executor(
-            None, trafilatura.extract, downloaded, 
-            "markdown", True, True
-        )
+        downloaded = await loop.run_in_executor(None, 
+                                                trafilatura.fetch_url,
+                                                url)
+        text = await loop.run_in_executor(None, 
+                                            trafilatura.extract,
+                                            downloaded,   # filecontent: Any,
+                                            url,          # url: Any | None = None,
+                                            None,     # record_id: Any | None = None,
+                                            False,    # no_fallback: bool = False,
+                                            False,    # favor_precision: bool = False,
+                                            False,    # favor_recall: bool = False,
+                                            True,     # include_comments: bool = True,
+                                            "markdown",   # output_format: str = "txt",
+                                            False,    # tei_validation: bool = False,
+                                            None,    # target_language: Any | None = None,
+                                            True,    # include_tables: bool = True,
+                                            False,    # include_images: bool = False, 
+                                            False,    # include_formatting: bool = False,
+                                            True,    # include_links: bool = False,
+                                            False,    # deduplicate: bool = False,
+                                            None,    # date_extraction_params: Any | None = None,
+                                            True,    # with_metadata: bool = False,
+                                            )
+
         
-        await save_memory(url, text)
+        await self.memory.save(url, text)
         return text
 
     async def search(self, query:str, max_results:int=3) -> list[dict[str, str]]:
         logger.info(f"Searching: {query}")
         key = f"search_{query}_{max_results}_{self.engine}"
         query = query.strip()
-        results = await load_memory(key)
+        results = await self.memory.load(key)
         if results is not None:
             logger.info(f"Search results found in memory: {query}")
             return results
@@ -231,7 +250,7 @@ class SearchEngine:
         
         results = results[:max_results]
         
-        await save_memory(key, results)
+        await self.memory.save(key, results)
         logger.info(f"Search results saved to memory: {query}")
         return results
 
@@ -271,7 +290,7 @@ class SearchInterface:
 
             # モデルの変更
             yield 0.0, f"使用AIモデル: {model}", ""
-            change_model(model)
+            self.search_engine.assistant.model_manager.change_model(model)
             
             yield 0.1, "検索キーワードを解析...", ""
             analyze_user = await self.search_engine.analyze_keyword(query, keywords_count)
@@ -413,6 +432,6 @@ async def main(query:str):
 
 
 if __name__ == "__main__":
-    asyncio.run(main("Python"))
+    asyncio.run(main("Pythonについて教えて"))
 
 

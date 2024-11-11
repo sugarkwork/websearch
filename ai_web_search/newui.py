@@ -11,8 +11,8 @@ from datetime import datetime
 from duckduckgo_search import DDGS
 from googleapiclient.discovery import build
 
-from .sqlite_memory_async import load_memory, save_memory
-from .sqlite_memory import load_memory as load_memory_sync, save_memory as save_memory_sync
+from pmem.sync_pmem import PersistentMemory
+from pmem.async_pmem import PersistentMemory as AsyncPersistentMemory
 
 from . import searcher
 
@@ -20,6 +20,8 @@ from . import searcher
 # ログ設定
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+mem = PersistentMemory("newui.db")
+amem = AsyncPersistentMemory("newui.db")
 
 
 def create_ui() -> gr.Interface:
@@ -33,7 +35,7 @@ def create_ui() -> gr.Interface:
                 model_dropdown = gr.Dropdown(
                     label="使用モデル",
                     choices=models,
-                    value=load_memory_sync("setting_current_model", models[0]),
+                    value=mem.load("setting_current_model", models[0]),
                     interactive=True
                 )
 
@@ -44,42 +46,42 @@ def create_ui() -> gr.Interface:
                 engine_dropdown = gr.Dropdown(
                     label="検索エンジン",
                     choices=engines,
-                    value=load_memory_sync("setting_current_engine", engines[0]),
+                    value=mem.load("setting_current_engine", engines[0]),
                     interactive=True
                 )
 
                 keywords_bar = gr.Slider(
                     minimum=1,
                     maximum=10,
-                    value=load_memory_sync("setting_keywords_count", 3),
+                    value=mem.load("setting_keywords_count", 3),
                     step=1,
                     label="検索キーワード数",
                 )
                 depth_bar = gr.Slider(
                     minimum=1,
                     maximum=10,
-                    value=load_memory_sync("setting_depth", 2),
+                    value=mem.load("setting_depth", 2),
                     step=1,
                     label="リンクの深さ",
                 )
                 threads_bar = gr.Slider(
                     minimum=1,
                     maximum=10,
-                    value=load_memory_sync("setting_threads", 2),
+                    value=mem.load("setting_threads", 2),
                     step=1,
                     label="最大平行処理数",
                 )
                 articles_bar = gr.Slider(
                     minimum=1,
                     maximum=50,
-                    value=load_memory_sync("setting_articles", 5),
+                    value=mem.load("setting_articles", 5),
                     step=1,
                     label="参照記事数",
                 )
                 article_quality_bar = gr.Slider(
                     minimum=1,
                     maximum=10,
-                    value=load_memory_sync("setting_article_quality", 7),
+                    value=mem.load("setting_article_quality", 7),
                     step=1,
                     label="参照する記事の関連度",
                 )
@@ -118,7 +120,7 @@ def create_ui() -> gr.Interface:
                 return "", "", 0, ""
 
             async def select_history(evt: gr.SelectData):
-                history = load_memory_sync("search_history", [])
+                history = mem.load("search_history", [])
                 selected_row = history[evt.index[0]]
                 return {
                     query_input: selected_row[0],
@@ -137,13 +139,13 @@ def create_ui() -> gr.Interface:
             )
 
         async def load_history():
-            history = await load_memory("search_history", [])
+            history = await amem.load("search_history", [])
             return history
 
         async def save_history(query, result):
-            await save_memory("search_history", 
+            await amem.save("search_history", 
                             [(query, result, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))] + 
-                            load_memory_sync("search_history", []))
+                            await amem.load("search_history", []))
             
         async def search_handler(
                 query: str, 
@@ -155,13 +157,13 @@ def create_ui() -> gr.Interface:
                 model: str,
                 search_engine: str
                 ) -> AsyncGenerator[list, None]:
-            await save_memory("setting_current_model", model)
-            await save_memory("setting_keywords_count", keywords_count)
-            await save_memory("setting_depth", depth)
-            await save_memory("setting_threads", threads)
-            await save_memory("setting_articles", articles)
-            await save_memory("setting_article_quality", article_quality)
-            await save_memory("setting_current_engine", search_engine)
+            await amem.save("setting_current_model", model)
+            await amem.save("setting_keywords_count", keywords_count)
+            await amem.save("setting_depth", depth)
+            await amem.save("setting_threads", threads)
+            await amem.save("setting_articles", articles)
+            await amem.save("setting_article_quality", article_quality)
+            await amem.save("setting_current_engine", search_engine)
 
             outputs = []
             final_result = ""
@@ -195,6 +197,8 @@ def create_ui() -> gr.Interface:
 if __name__ == "__main__":
     interface = create_ui()
     interface.launch(
-        server_name="localhost",
-        debug=True
+        server_name="127.0.0.1",
+        server_port=3939,
+        debug=True,
+        auth=("username", "password")
     )
